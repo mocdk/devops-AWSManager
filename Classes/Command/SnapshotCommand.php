@@ -93,7 +93,7 @@ class SnapshotCommand extends Command {
 				array('Name' => 'tag:AutoPrune', 'Values' => array('True'))
 			)
 		));
-		$doDelete = FALSE;
+
 		$offsetInSeconds = 86400 * 7;
 		foreach ($result['Snapshots'] as $snapshot) {
 			$this->output->writeln(sprintf(' - %s (%s) on %s Description "%s"', $snapshot['SnapshotId'], $snapshot['State'], $snapshot['StartTime']->format('d/m-Y H:i'), $snapshot['Description']));
@@ -108,7 +108,6 @@ class SnapshotCommand extends Command {
 			}
 		}
 
-		//AutoCreated
 	}
 
 	/**
@@ -119,24 +118,10 @@ class SnapshotCommand extends Command {
 			throw new InvalidArgumentException('Please specify the volume to snapshot');
 		}
 		$volumeId = $this->input->getArgument('volume');
-		$this->output->write(sprintf('Taking snapshot of %s' . PHP_EOL, $volumeId));
+
 		try {
-			$volumeInformation = $this->ec2Client->describeVolumes(array('VolumeIds' => array($volumeId)));
-			$now = new \DateTime();
-			$result = $this->ec2Client->createSnapshot(array(
-				'VolumeId' => $volumeId,
-				'Description' => 'Automatic snapshot take on ' . $now->format('d/m-Y'),
-				'DryRun' => false
-			));
-			$newSnapshotIt = $result['SnapshotId'];
-
-			$this->ec2Client->createTags(array(
-				'Resources' => array($newSnapshotIt),
-				'Tags' => array(
-					array('Key' => 'AutoPrune', 'Value' => 'True')
-				)
-			));
-
+			$this->output->write(sprintf('Taking snapshot of %s' . PHP_EOL, $volumeId));
+			$this->takeSnaphotOfVolume($volumeId);
 		} catch (Ec2Exception $e) {
 			if ($e->getAwsErrorCode() == 'InvalidVolume.NotFound') {
 				$this->output->writeln('Unable to finde volue' . $volumeId);
@@ -144,6 +129,49 @@ class SnapshotCommand extends Command {
 				$this->output->writeln('General AWS Error ' . $e->getMessage());
 			}
 		}
+
+	}
+
+	/**
+	 * Given a VolumneID, create a new snapshot.
+	 *
+	 * Will test if an ealier snaptshot was created within the last 23 hours, and abort if true.
+	 *
+	 * @param string $volumeId
+	 */
+	protected function takeSnaphotOfVolume($volumeId) {
+		// Throws exception if no volume is found
+		$volumeInformation = $this->ec2Client->describeVolumes(array('VolumeIds' => array($volumeId)));
+
+		$result = $this->ec2Client->describeSnapshots(array(
+			'Filters' => array(
+				array('Name' => 'volume-id', 'Values' => array($volumeId)),
+				array('Name' => 'tag:AutoPrune', 'Values' => array('True'))
+			)
+		));
+		$offsetInSeconds = 3600 * 23; // 23 Hours
+		foreach ($result['Snapshots'] as $snapshot) {
+			if (time() - $snapshot['StartTime']->getTimestamp() < $offsetInSeconds) {
+				$this->output->writeln(sprintf('Snapshot %s was taken %s, so not taking new snapshot.', $snapshot['SnapshotId'], $snapshot['StartTime']->format('d/m-Y H:i')));
+				return;
+			}
+		}
+
+		$now = new \DateTime();
+		$result = $this->ec2Client->createSnapshot(array(
+			'VolumeId' => $volumeId,
+			'Description' => 'Automatic snapshot take on ' . $now->format('d/m-Y H:i'),
+			'DryRun' => false
+		));
+		$newSnapshotIt = $result['SnapshotId'];
+
+		$this->ec2Client->createTags(array(
+			'Resources' => array($newSnapshotIt),
+			'Tags' => array(
+				array('Key' => 'AutoPrune', 'Value' => 'True')
+			)
+		));
+
 
 	}
 
