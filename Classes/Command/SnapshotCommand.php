@@ -55,7 +55,7 @@ class SnapshotCommand extends Command {
 	protected function execute(\Symfony\Component\Console\Input\InputInterface $input, \Symfony\Component\Console\Output\OutputInterface $output) {
 		$this->input = $input;
 		$this->output = $output;
-		$actions = array('listVolumes', 'takeSnapshot', 'listSnapshots', 'deleteOldAutocreatedSnapshots');
+		$actions = array('listVolumes', 'takeSnapshot', 'listSnapshots', 'pruneSnapshots');
 
 		if (in_array($this->input->getArgument('action'), $actions)) {
 			call_user_func(array($this, $this->input->getArgument('action') . 'Action'));
@@ -86,8 +86,8 @@ class SnapshotCommand extends Command {
 	/**
 	 *
 	 */
-	protected function deleteOldAutocreatedSnapshotsAction() {
-		$this->output->writeln('Finding all snapshots that are tagged with AutoPruve=True');
+	protected function pruneSnapshotsAction() {
+		$this->output->writeln('Finding all snapshots that are tagged with AutoPrune=True');
 		$result = $this->ec2Client->describeSnapshots(array(
 			'Filters' => array(
 				array('Name' => 'tag:AutoPrune', 'Values' => array('True'))
