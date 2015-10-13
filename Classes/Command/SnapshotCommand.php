@@ -55,7 +55,7 @@ class SnapshotCommand extends Command {
 	protected function execute(\Symfony\Component\Console\Input\InputInterface $input, \Symfony\Component\Console\Output\OutputInterface $output) {
 		$this->input = $input;
 		$this->output = $output;
-		$actions = array('listVolumes', 'takeSnapshot', 'listSnapshots', 'pruneSnapshots');
+		$actions = array('listVolumes', 'takeSnapshot', 'listSnapshots', 'pruneSnapshots', 'backupAllVolumes');
 
 		if (in_array($this->input->getArgument('action'), $actions)) {
 			call_user_func(array($this, $this->input->getArgument('action') . 'Action'));
@@ -80,6 +80,23 @@ class SnapshotCommand extends Command {
 		$this->output->writeln(sprintf('The volume %s has %d snapshots', $volumeId, count($result['Snapshots'])));
 		foreach ($result['Snapshots'] as $snapshot) {
 			$this->output->writeln(sprintf(' - %s (%s) on %s Description %s', $snapshot['SnapshotId'], $snapshot['State'], $snapshot['StartTime']->format('d/m-Y H:i'), $snapshot['Description']));
+		}
+	}
+
+	/**
+	 * Find all volumes marked with AutoSnapshot=True and ensure a snapshot is created
+	 *
+	 */
+	public function backupAllVolumesAction() {
+		$options = array(
+			'Filters' => array(
+				array('Name' => 'tag:AutoSnapshot', 'Values' => array('True'))
+			)
+		);
+		$this->output->writeln('Finding all volumes tagged with AutoSnapshot=True');
+		foreach ($this->ec2Client->describeVolumes($options)['Volumes'] as $volumeInformation) {
+			$this->output->write(sprintf(' - VolumeID: %s is marked for automatic snapshot' . PHP_EOL, $volumeInformation['VolumeId']));
+			$this->takeSnaphotOfVolume($volumeInformation['VolumeId']);
 		}
 	}
 
@@ -152,7 +169,7 @@ class SnapshotCommand extends Command {
 		$offsetInSeconds = 3600 * 23; // 23 Hours
 		foreach ($result['Snapshots'] as $snapshot) {
 			if (time() - $snapshot['StartTime']->getTimestamp() < $offsetInSeconds) {
-				$this->output->writeln(sprintf('Snapshot %s was taken %s, so not taking new snapshot.', $snapshot['SnapshotId'], $snapshot['StartTime']->format('d/m-Y H:i')));
+				$this->output->writeln(sprintf('--- Snapshot %s was taken %s, so not taking new snapshot.', $snapshot['SnapshotId'], $snapshot['StartTime']->format('d/m-Y H:i')));
 				return;
 			}
 		}
@@ -160,13 +177,14 @@ class SnapshotCommand extends Command {
 		$now = new \DateTime();
 		$result = $this->ec2Client->createSnapshot(array(
 			'VolumeId' => $volumeId,
-			'Description' => 'Automatic snapshot take on ' . $now->format('d/m-Y H:i'),
+			'Description' => sprintf('Automatic snapshot of volume %s taken on %s', $volumeId, $now->format('d/m-Y H:i')),
 			'DryRun' => false
 		));
-		$newSnapshotIt = $result['SnapshotId'];
 
+		$newSnapshotId = $result['SnapshotId'];
+		$this->output->writeln(sprintf('--- New snapshot scheduled. Id: %s', $newSnapshotId ));
 		$this->ec2Client->createTags(array(
-			'Resources' => array($newSnapshotIt),
+			'Resources' => array($newSnapshotId),
 			'Tags' => array(
 				array('Key' => 'AutoPrune', 'Value' => 'True')
 			)
