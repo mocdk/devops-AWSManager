@@ -1,0 +1,26 @@
+{
+        "name": "mocdk/awsmanager",
+        "description": "Amazon webservices manager",
+        "license": "LGPL-3.0+",
+        "config": {
+                "vendor-dir": "Libraries",
+                "bin-dir": "bin"
+        },
+        "autoload": {
+                "psr-4": {
+                        "AWSManager\\": "Classes/"
+                }
+        },
+        "require": {
+                "symfony/console": "3.0.*@dev",
+                "symfony/yaml": "3.0.*@dev",
+                "symfony/process": "3.0.*@dev",
+                "aws/aws-sdk-php": "~3.8"
+        },
+        "require-dev": {
+        },
+        "suggest": {
+        },
+        "scripts": {
+        }
+}
